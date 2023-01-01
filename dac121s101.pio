@@ -1,0 +1,42 @@
+.program dac121s101
+; Repeatedly get one word of data from the TX FIFO (autopull threshold = 16)
+; out DIN bit for DAC control and set SCLK accordingly
+
+.side_set 2                 ; stealing 2 bits - SYNCB[0], SCLK[1]
+init:
+    nop             side 1  ; initialize SYNCB=1
+start:
+    set x, 15       side 3  ; loop 16 times
+bitloop:
+    out pins, 1     side 2  ; set DIN and set SCLK
+    jmp x-- bitloop side 0  ; reset SCLK = shift 1 bit
+end:
+    jmp start       side 2  ; end SYNCB
+
+% c-sdk {
+static inline void dac121s101_program_init(PIO pio, uint sm, uint offset) {
+    pio_sm_config c = control_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `pin`
+    // parameter to this function.
+    // GP 0=UART_TX, 1=UART_RX
+    // sideset: 2=SYNCB, 3=SCLK - should be consecutive
+    // out: 4=DIN
+    sm_config_set_sideset_pins(&c, 2); // from GP2
+    sm_config_set_out_pins(&c, 4, 1); // from GP4, 1 pins
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, 2);
+    pio_gpio_init(pio, 3);
+    pio_gpio_init(pio, 4);
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, 2, 3, true); // base, count, is_out
+
+    // Shift register autopull
+    sm_config_set_out_shift(&c, false, true, 16); // shift_right, autopull, threshold
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+    // Set the state machine running
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

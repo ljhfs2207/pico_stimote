@@ -1,0 +1,31 @@
+.program stream_monitor
+; If streaming high, output high, if low, output low
+
+.wrap_target
+    out x, 32               ; 1 bit shift out to x
+    nop         [31]        ; delay for 48 cycles (match with dac programming cylces)
+    nop         [15]        ; 32 + 16
+    mov pins, x             ; copy x to pin outputs
+.wrap
+
+% c-sdk {
+static inline void stream_monitor_program_init(PIO pio, uint sm, uint offset) {
+    pio_sm_config c = stream_monitor_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `pin`
+    // parameter to this function.
+    sm_config_set_out_pins(&c, 11, 1); // from GP11, 1 pins
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, 11);
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, 11, 1, true); // base, count, is_out
+
+    // Shift register autopull
+    sm_config_set_out_shift(&c, true, true, 32); // shift_right, autopull, threshold
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+    // Set the state machine running
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}
