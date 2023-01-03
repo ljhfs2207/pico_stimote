@@ -36,6 +36,9 @@ reboot:
 clean:
 	rm -rf build/*
 
+gpio: FORCE
+	raspi-gpio set 4 ip pd
+
 microbot: FORCE
 	raspi-gpio set 4 ip pd
 	sudo python3 testbench/221117_microbot_light_program.py

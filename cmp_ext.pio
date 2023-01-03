@@ -1,0 +1,33 @@
+.program cmp_ext
+; External clock source
+; Drive two pins for monitoring
+
+.wrap_target
+	out pins, 2 ; GP14: CMP_EXT, GP15: CMP_EXT_COPY
+.wrap
+
+% c-sdk {
+static inline void cmp_ext_program_init(PIO pio, uint sm, uint offset) {
+    pio_sm_config c = cmp_ext_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `pin`
+    // parameter to this function.
+    // GP 0=UART_TX, 1=UART_RX
+    // sideset: 2=SYNCB, 3=SCLK - should be consecutive
+    // out: 4=DIN
+    sm_config_set_out_pins(&c, 14, 2); // from GP14, 2 pins
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, 14);
+    pio_gpio_init(pio, 15);
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, 14, 2, true); // base, count, is_out
+
+    // Shift register autopull
+    sm_config_set_out_shift(&c, true, true, 2); // shift_right, autopull, threshold
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+    // Set the state machine running
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

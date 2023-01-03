@@ -33,6 +33,8 @@ if (TARGET tinyusb_device)
     # make dac_control.pio.h
     pico_generate_pio_header(stimote_control ${CMAKE_CURRENT_LIST_DIR}/dac121s101.pio)
     pico_generate_pio_header(stimote_control ${CMAKE_CURRENT_LIST_DIR}/stream_monitor.pio)
+    pico_generate_pio_header(stimote_control ${CMAKE_CURRENT_LIST_DIR}/clk_ext.pio)
+    pico_generate_pio_header(stimote_control ${CMAKE_CURRENT_LIST_DIR}/cmp_ext.pio)
 
     # create map/bin/hex/uf2 file etc.
     pico_add_extra_outputs(stimote_control)

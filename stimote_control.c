@@ -9,6 +9,8 @@
 // Our assembled program:
 #include "dac121s101.pio.h"
 #include "stream_monitor.pio.h"
+#include "clk_ext.pio.h"
+#include "cmp_ext.pio.h"
 
 //const uint pin_test = 3;
 //PICO_DEFAULT_LED_PIN
@@ -77,6 +79,10 @@ int main() {
     09 INTERRUPT (input)
     10 STREAM_EN
     11 STREAM_MONITOR
+    12 CLK_EXT
+    13 CLK_EXT_COPY
+    14 CMP_EXT
+    15 CMP_EXT_COPY
     */
     int i;
     stdio_init_all();
@@ -85,15 +91,23 @@ int main() {
     PIO pio = pio0; // pio0, pio1
     uint offset = pio_add_program(pio, &dac121s101_program);
     uint sm = pio_claim_unused_sm(pio, true);
-    control_program_init(pio, sm, offset);
+    dac121s101_program_init(pio, sm, offset);
     // another state machien for stream_monitor
     uint offset_monitor = pio_add_program(pio, &stream_monitor_program);
     uint sm_monitor = pio_claim_unused_sm(pio, true);
     stream_monitor_program_init(pio, sm_monitor, offset_monitor);
+    // state machien for clk_ext
+    uint offset_clk_ext = pio_add_program(pio, &clk_ext_program);
+    uint sm_clk_ext = pio_claim_unused_sm(pio, true);
+    clk_ext_program_init(pio, sm_clk_ext, offset_clk_ext);
+    // state machien for cmp_ext
+    uint offset_cmp_ext = pio_add_program(pio, &cmp_ext_program);
+    uint sm_cmp_ext = pio_claim_unused_sm(pio, true);
+    cmp_ext_program_init(pio, sm_cmp_ext, offset_cmp_ext);
 
     // Initialize core1 - multicore for idle state
     multicore_launch_core1(core1_entry);
-    multicore_fifo_push_blocking(sm);
+    multicore_fifo_push_blocking(sm); // communication core 0 - 1 using state machine ID
 
     // UART setting - GP0=TX, GP1=RX by default
     int baud = 921600;
@@ -123,7 +137,7 @@ int main() {
     gpio_set_dir(gpio_pin_stream_en, GPIO_OUT);
 
     // Variables for appropriate command execution
-    char command;
+    char command[30];
     char bitstream[131072]; // 128kB among rp2040=264kB 
     char idle[4]; // "on" or "off"
     float freq, div;
@@ -134,11 +148,60 @@ int main() {
 
     while (true) {
         if(uart_is_readable(uart0)){
-            command = uart_getc(uart0);
-            if(command == 'f'){ // set state machine frequency
+            scanf("%s", command);
+            if(strcmp(command, "freq") == 0){ // set state machine frequency, almost useless now
                 scanf("%f", &freq);
                 // calculate divider value (float)
                 div = clock_get_hz(clk_sys) / freq;
+                // stop pio, set div, resume pio
+                pio_sm_set_enabled(pio, sm, false);
+                pio_sm_set_enabled(pio, sm_monitor, false);
+                pio_sm_set_enabled(pio, sm_clk_ext, false);
+                pio_sm_set_clkdiv(pio, sm, div);
+                pio_sm_set_clkdiv(pio, sm_monitor, div);
+                pio_sm_set_clkdiv(pio, sm_clk_ext, div);
+                pio_sm_set_enabled(pio, sm, true);
+                pio_sm_set_enabled(pio, sm_monitor, true);
+                pio_sm_set_enabled(pio, sm_clk_ext, true);
+                // print to host
+                printf("%f\n", freq);
+            }
+            else if (strcmp(command, "vlowhigh") == 0){ // set dac seqeuence for low / high levels
+                // receive word_0
+                dac_command = 0;
+                command[0] = uart_getc(uart0);
+                dac_command += (uint)command[0] << 24u;
+                command[0] = uart_getc(uart0);
+                dac_command += (uint)command[0] << 16u;
+                word_0 = dac_command;
+                // receive word_1
+                dac_command = 0;
+                command[0] = uart_getc(uart0);
+                dac_command += (uint)command[0] << 24u;
+                command[0] = uart_getc(uart0);
+                dac_command += (uint)command[0] << 16u;
+                word_1 = dac_command;
+                // share with core 1
+                multicore_fifo_push_blocking(CORE1_UPDATE_VLEVEL);
+                multicore_fifo_push_blocking(word_0);
+                multicore_fifo_push_blocking(word_1);
+                // echo
+                printf("%x %x\n", word_0 >> 16u, word_1 >> 16u);
+            }
+            else if (strcmp(command, "dac_command") == 0){ // single dac command
+                dac_command = 0;
+                command[0] = uart_getc(uart0);
+                dac_command += (uint)command[0] << 24u;
+                command[0] = uart_getc(uart0);
+                dac_command += (uint)command[0] << 16u;
+                pio_sm_put_blocking(pio, sm, dac_command);
+                printf("x'%04x'\n", dac_command >> 16u);
+            }
+            else if (strcmp(command, "dac_stream") == 0){ // stream data
+                // Set CMP_EXT frequency
+                scanf("%f", &freq);
+                // calculate divider value (float)
+                div = clock_get_hz(clk_sys) / freq; 
                 // stop pio, set div, resume pio
                 pio_sm_set_enabled(pio, sm, false);
                 pio_sm_set_enabled(pio, sm_monitor, false);
@@ -148,39 +211,8 @@ int main() {
                 pio_sm_set_enabled(pio, sm_monitor, true);
                 // print to host
                 printf("%f\n", freq);
-            }
-            else if (command == 'v'){ // set dac seqeuence for low / high levels
-                // receive word_0
-                dac_command = 0;
-                command = uart_getc(uart0);
-                dac_command += (uint)command << 24u;
-                command = uart_getc(uart0);
-                dac_command += (uint)command << 16u;
-                word_0 = dac_command;
-                // receive word_1
-                dac_command = 0;
-                command = uart_getc(uart0);
-                dac_command += (uint)command << 24u;
-                command = uart_getc(uart0);
-                dac_command += (uint)command << 16u;
-                word_1 = dac_command;
-                // share with core 1
-                multicore_fifo_push_blocking(CORE1_UPDATE_VLEVEL);
-                multicore_fifo_push_blocking(word_0);
-                multicore_fifo_push_blocking(word_1);
-                // echo
-                printf("%x %x\n", word_0 >> 16u, word_1 >> 16u);
-            }
-            else if (command == 'd'){ // single dac command
-                dac_command = 0;
-                command = uart_getc(uart0);
-                dac_command += (uint)command << 24u;
-                command = uart_getc(uart0);
-                dac_command += (uint)command << 16u;
-                pio_sm_put_blocking(pio, sm, dac_command);
-                printf("x'%04x'\n", dac_command >> 16u);
-            }
-            else if (command == 's'){ // stream data
+
+                // Stream CMP_EXT data
                 scanf("%s", bitstream);
                 // disable should be done "after" scanf because it takes some time
                 multicore_fifo_push_blocking(CORE1_MANCHESTER_IDLE_FALSE); 
@@ -188,8 +220,8 @@ int main() {
                 gpio_put(gpio_pin_stream_en, 1);
                 while (true){
                     //command = uart_getc(uart0);
-                    command = bitstream[byte_count];
-                    if(command == '\0'){ // normal termination
+                    command[0] = bitstream[byte_count];
+                    if(command[0] == '\0'){ // normal termination
                         multicore_fifo_push_blocking(current_idle_state);
                         printf("%d\n", byte_count);
                         gpio_put(gpio_pin_stream_en, 0);
@@ -202,7 +234,7 @@ int main() {
                     }
                     else { // normal loop
                         for(i=0; i < 8; i++)
-                            if ((command >> i) & 1) {
+                            if ((command[0] >> i) & 1) {
                                 pio_sm_put_blocking(pio, sm, word_1);
                                 pio_sm_put_blocking(pio, sm_monitor, 1);
                             }
@@ -214,7 +246,7 @@ int main() {
                     }
                 }
             }
-            else if (command == 'i'){
+            else if (strcmp(command, "dac_idle_onoff") == 0){ // turn on/off idle state
                 scanf("%s", idle);
                 if (strcmp(idle, "off")==0)
                     current_idle_state = CORE1_MANCHESTER_IDLE_FALSE;
@@ -223,8 +255,60 @@ int main() {
                 multicore_fifo_push_blocking(current_idle_state);
                 printf("%s\n", idle);
             }
+            else if(strcmp(command, "clk_ext") == 0){ // set clk_ext frequency
+                scanf("%f", &freq);
+                // calculate divider value (float)
+                div = clock_get_hz(clk_sys) / (freq * 2); // state machine freq / 2  = clock freq
+                // stop pio, set div, resume pio
+                pio_sm_set_enabled(pio, sm_clk_ext, false);
+                pio_sm_set_clkdiv(pio, sm_clk_ext, div);
+                pio_sm_set_enabled(pio, sm_clk_ext, true);
+                // print to host
+                printf("%f\n", freq);
+            }
+            else if (strcmp(command, "cmp_ext") == 0){ // stream through cmp_ext
+                // Set CMP_EXT frequency
+                scanf("%f", &freq);
+                // calculate divider value (float)
+                div = clock_get_hz(clk_sys) / freq; 
+                // stop pio, set div, resume pio
+                pio_sm_set_enabled(pio, sm_cmp_ext, false);
+                pio_sm_set_clkdiv(pio, sm_cmp_ext, div);
+                pio_sm_set_enabled(pio, sm_cmp_ext, true);
+                // print to host
+                printf("%f\n", freq);
+
+                // Stream CMP_EXT data
+                scanf("%s", bitstream);
+                // disable should be done "after" scanf because it takes some time
+                multicore_fifo_push_blocking(CORE1_MANCHESTER_IDLE_FALSE); 
+                byte_count = 0;
+                gpio_put(gpio_pin_stream_en, 1);
+                while (true){
+                    //command = uart_getc(uart0);
+                    command[0] = bitstream[byte_count];
+                    if(command[0] == '\0'){ // normal termination
+                        multicore_fifo_push_blocking(current_idle_state);
+                        printf("%d\n", byte_count);
+                        gpio_put(gpio_pin_stream_en, 0);
+                        break; 
+                    }
+                    else if (gpio_get(gpio_pin_interrupt)){ // interrupted termination
+                        printf("interrupted\n");
+                        stdio_flush();
+                        break;
+                    }
+                    else { // normal loop
+                        for(i=0; i < 8; i++)
+                            if ((command[0] >> i) & 1)
+                                pio_sm_put_blocking(pio, sm_cmp_ext, 3);
+                            else
+                                pio_sm_put_blocking(pio, sm_cmp_ext, 0);
+                        byte_count++;
+                    }
+                }
+            }
         }
-        //else if(
     }
     return 0;
 }

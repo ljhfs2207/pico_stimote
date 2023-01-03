@@ -2,8 +2,10 @@
 # Description: Raspberry Pi Pico Handler
 # History:
 #   221116 v0.1: initial commit with idle state implementation
-#   221117 : added stream_monitor
+#   221117: added stream_monitor
 #   221201: Changed for DAC121S101 // 16bit command
+#   230101: changed command from character to string
+#   230101: added clk_ext
 
 import os
 import sys
@@ -18,13 +20,19 @@ class Pico():
     vlow = 0
     vhigh = 5
     
-    command_freq = 'f'
-    command_vlevel = 'v'
-    command_dac_sequence = 'd'
-    command_stream = 's'
-    command_stream_idle = 'i'
+    command_freq = 'freq\n'
+    command_vlevel = 'vlowhigh\n'
+    command_dac_sequence = 'dac_command\n'
+    command_dac_stream = 'dac_stream\n'
+    command_stream_idle = 'dac_idle_onoff\n'
+    command_clk_ext = 'clk_ext\n'
+    command_cmp_ext = 'cmp_ext\n'
 
     dac_prefix = [0, 0, 0, 0] # 2 don't care terms, 0 0 for normal operation (powerdown)
+    dac_sm_cycles = 50 # SYNCB, SCLK, DIN totol state machine cycles for 12b DAC programming
+    stream_digital = 0
+    stream_analog = 1
+    stream_mode = stream_digital
 
     ### Generic methods
     def __init__(self, port, baud, comment='dac_control'):
@@ -89,7 +97,7 @@ class Pico():
         command = self.command_vlevel.encode('ascii')
         command += self._dac_seq_bytes(self.vlow)
         command += self._dac_seq_bytes(self.vhigh)
-        self.log.info('dac_set_vlevel - write = {}'.format(command))
+        self.log.info('dac_set_vlevel - write = {}'.format(command.decode().replace('\n',' ')))
         self.write_raw(command)
         self.log.info('dac_set_vlevel - echoed = {}'.format(self.read_line()))
 
@@ -101,7 +109,8 @@ class Pico():
         # serial communication
         command = self.command_dac_sequence.encode('ascii')
         command += self._dac_seq_bytes(v)
-        self.log.info('dac_set_voltage - write = {}'.format(command))
+        #self.log.info('dac_set_voltage - write = {}'.format(command.replace('\n',' ')))
+        self.log.info('dac_set_voltage - write = {} {:.2f} V'.format(self.command_dac_sequence.rstrip(), v))
         self.write_raw(command)
         self.log.info('dac_set_voltage - echoed = {}'.format(self.read_line()))
 
@@ -111,7 +120,7 @@ class Pico():
         else:
             command = self.command_freq
             command += '{:f}'.format(freq)
-            self.log.info('dac_set_frequency - write = {}'.format(command))
+            self.log.info('dac_set_frequency - write = {}'.format(command.replace('\n',' ')))
             self.write_line(command)
             self.log.info('dac_set_frequency - echoed = {}'.format(self.read_line()))
 
@@ -145,9 +154,32 @@ class Pico():
             lines = fp.readlines()
         self.stream_str = ''.join(line.split('#')[0].rstrip() for line in lines)
         self.stream_str_to_byte(self.stream_str)
-    def stream_write(self):
-        command = self.command_stream.encode('ascii')
-        command += bytes(self.stream_byte)
+    def stream_set_mode(self, mode):
+        if mode == 'analog':
+            self.stream_mode = self.stream_analog
+            self.log.info('stream_set_mode - analog')
+        elif mode == 'digital':
+            self.stream_mode = self.stream_digital
+            self.log.info('stream_set_mode - digital')
+
+    def stream_write(self, freq):
+        # Send frequency
+        if freq < 2e3 or freq > 125e6:
+            self.error('stream_write - {:.0f} not supported (2k-125M)'.format(freq))
+        else:
+            if self.stream_mode == self.stream_analog:
+                command = self.command_dac_stream
+                self.log.info('stream_write - mode analog')
+                command += '{:f}'.format(freq * self.dac_sm_cycles)
+            elif self.stream_mode == self.stream_digital:
+                command = self.command_cmp_ext
+                self.log.info('stream_write - mode digital')
+                command += '{:f}'.format(freq)
+            self.log.info('stream_write - write = {} Hz'.format(command.replace('\n',' ')))
+            self.write_line(command)
+            self.log.info('stream_write - echoed = {}'.format(self.read_line()))
+        # Send data
+        command = bytes(self.stream_byte)
         command += '\n'.encode('ascii')
         self.log.info('stream_write - length = {} byte (max=128k from uf2)'.format(len(command)-2))
         self.write_raw(command)
@@ -158,8 +190,21 @@ class Pico():
             command += 'on'
         else:
             command += 'off'
-        self.log.info('stream_idle - write = {}'.format(command))
+        self.log.info('stream_idle - write = {}'.format(command.replace('\n',' ')))
         self.write_line(command)
         self.log.info('stream_idle - echoed = {}'.format(self.read_line()))
+
+    ### CLK_EXT
+    def clk_ext_set_frequency(self, freq):
+        if freq < 1e3 or freq > 62.5e6: # system clock = 2k-125M (133M)
+            self.error('clk_ext_set_frequency - {:.0f} not supported (1k-62.5M)'.format(freq))
+        else:
+            command = self.command_clk_ext
+            command += '{:f}'.format(freq)
+            self.log.info('clk_ext_set_frequency - write = {} Hz'.format(command.replace('\n',' ')))
+            self.write_line(command)
+            self.log.info('clk_ext_set_frequency - echoed = {}'.format(self.read_line()))
+
+
 
 

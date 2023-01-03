@@ -1,0 +1,34 @@
+.program clk_ext
+; External clock source
+; Drive two pins for monitoring
+
+.wrap_target
+    set pins, 3
+    set pins, 0
+.wrap
+
+% c-sdk {
+static inline void clk_ext_program_init(PIO pio, uint sm, uint offset) {
+    pio_sm_config c = clk_ext_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `pin`
+    // parameter to this function.
+    // GP 0=UART_TX, 1=UART_RX
+    // sideset: 2=SYNCB, 3=SCLK - should be consecutive
+    // out: 4=DIN
+    sm_config_set_set_pins(&c, 12, 2); // from GP12, 2 pins
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, 12);
+    pio_gpio_init(pio, 13);
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, 12, 2, true); // base, count, is_out
+
+    // Shift register autopull
+    //sm_config_set_out_shift(&c, false, true, 16); // shift_right, autopull, threshold
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+    // Set the state machine running
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

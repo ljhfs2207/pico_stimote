@@ -14,8 +14,15 @@ end:
     jmp start       side 2  ; end SYNCB
 
 % c-sdk {
+
+/*
+SYNCB  ----\_______________ ... _____________/-----
+SCLK   ______/--\__/--\__/- ... _/--\__/--\________
+DIN    ------X--15-X--14-X- ... -X--01-X--00-------
+*/
+
 static inline void dac121s101_program_init(PIO pio, uint sm, uint offset) {
-    pio_sm_config c = control_program_get_default_config(offset);
+    pio_sm_config c = dac121s101_program_get_default_config(offset);
 
     // Map the state machine's OUT pin group to one pin, namely the `pin`
     // parameter to this function.
