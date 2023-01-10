@@ -3,8 +3,8 @@ import RPi.GPIO as gpio
 import time
 
 sys.path.append('/home/ddlabpi/pico/stimote/')
-from pico import Pico
-from stimote_inst import manc_enc_str
+from pico import pico
+from stimote_inst import manc_enc_str_byte
 
 ########## Parameters ##########
 ### Pi setting
@@ -14,7 +14,7 @@ from stimote_inst import manc_enc_str
 ### Pico setting
 pico_port = '/dev/serial0' # '/dev/ttyACM0'
 baud = 921600 # 115201
-pico = Pico(pico_port, baud, 'stimq_sweep')
+pico = pico(pico_port, baud, 'stimq_sweep')
 log = pico.log
 
 ### Frequency
@@ -32,12 +32,11 @@ pico.clk_ext_set_frequency(freq_clk_ext)
 pico.stream_set_mode('digital')
 #pico.stream_idle(True)
 for stim_q in range(1,8):
-    pico.stream_str_to_byte(manc_enc_str[stim_q-1])
+    #pico.stream_str_to_byte(manc_enc_str[stim_q-1])
+    pico.stream_byte = manc_enc_str_byte[stim_q]
     log.info('stim_q sweep - {}'.format(stim_q))
     pico.stream_write(freq_cmp_ext)
 
 ### Pi GPIO
 #gpio.cleanup()
-
-
 

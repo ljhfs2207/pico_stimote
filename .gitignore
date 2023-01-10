@@ -1,4 +1,7 @@
 
+stimote_inst/
+
 build/
 logs/
 __pycache__/
+*.swp

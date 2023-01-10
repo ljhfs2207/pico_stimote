@@ -5,7 +5,7 @@
 #   221117: added stream_monitor
 #   221201: Changed for DAC121S101 // 16bit command
 #   230101: changed command from character to string
-#   230101: added clk_ext
+#   230101: added clk_ext/cmp_ext
 
 import os
 import sys
@@ -13,7 +13,7 @@ import serial
 import time
 import threading
 
-class Pico():
+class pico():
     ### Parameters
     vrefl = 0
     vrefh = 5
@@ -95,8 +95,8 @@ class Pico():
         else:
             self.vhigh = vhigh
         command = self.command_vlevel.encode('ascii')
-        command += self._dac_seq_bytes(self.vlow)
-        command += self._dac_seq_bytes(self.vhigh)
+        command += self._dac_seq_v_to_bytes(self.vlow)
+        command += self._dac_seq_v_to_bytes(self.vhigh)
         self.log.info('dac_set_vlevel - write = {}'.format(command.decode().replace('\n',' ')))
         self.write_raw(command)
         self.log.info('dac_set_vlevel - echoed = {}'.format(self.read_line()))
@@ -108,15 +108,29 @@ class Pico():
             self.log.error('Error: v > vrefh')
         # serial communication
         command = self.command_dac_sequence.encode('ascii')
-        command += self._dac_seq_bytes(v)
+        command += self._dac_seq_v_to_bytes(v)
         #self.log.info('dac_set_voltage - write = {}'.format(command.replace('\n',' ')))
         self.log.info('dac_set_voltage - write = {} {:.2f} V'.format(self.command_dac_sequence.rstrip(), v))
         self.write_raw(command)
         self.log.info('dac_set_voltage - echoed = {}'.format(self.read_line()))
 
+    def dac_set_code(self, code):
+        if code < 0:
+            self.log.error('Error: v < min_code 0')
+        elif code > 4095:
+            self.log.error('Error: v > max_code 4095')
+        # serial communication
+        command = self.command_dac_sequence.encode('ascii')
+        command += self._dac_seq_code_to_bytes(code)
+        #self.log.info('dac_set_voltage - write = {}'.format(command.replace('\n',' ')))
+        self.log.info('dac_set_code - write = {} {}'.format(self.command_dac_sequence.rstrip(), code))
+        self.write_raw(command)
+        self.log.info('dac_set_code - echoed = {}'.format(self.read_line()))
+
+
     def dac_set_frequency(self, freq):
         if freq < 2e3 or freq > 125e6:
-            self.error('dac_set_frequency - {:.0f} not supported (2k-125M)'.format(freq))
+            self.log.error('dac_set_frequency - {:.0f} not supported (2k-125M)'.format(freq))
         else:
             command = self.command_freq
             command += '{:f}'.format(freq)
@@ -124,19 +138,31 @@ class Pico():
             self.write_line(command)
             self.log.info('dac_set_frequency - echoed = {}'.format(self.read_line()))
 
-    def _dac_seq_bytes(self, v):
-        binlist = self._dac_seq_binlist(v)
+    def _dac_seq_v_to_bytes(self, v):
+        binlist = self._dac_seq_v_to_binlist(v)
         charlist = []
         charlist.append(self._binlist_to_int(binlist[0:0+8]))
         charlist.append(self._binlist_to_int(binlist[8:8+8]))
         return bytes(charlist)
-    def _dac_seq_binlist(self, v):
+    def _dac_seq_v_to_binlist(self, v):
         seq = self.dac_prefix.copy()
         seq.extend(self._v_to_u12b_list(v))
+        return seq
+    def _dac_seq_code_to_bytes(self, code):
+        binlist = self._dac_seq_code_to_binlist(code)
+        charlist = []
+        charlist.append(self._binlist_to_int(binlist[0:0+8]))
+        charlist.append(self._binlist_to_int(binlist[8:8+8]))
+        return bytes(charlist)
+    def _dac_seq_code_to_binlist(self, code):
+        seq = self.dac_prefix.copy()
+        seq.extend(self._code_to_u12b_list(code))
         return seq
 
     def _v_to_u12b_list(self, v):
         code = round((v-self.vrefl)/(self.vrefh-self.vrefl)*4095)
+        return [int(char) for char in '{:012b}'.format(code)]
+    def _code_to_u12b_list(self, code):
         return [int(char) for char in '{:012b}'.format(code)]
     def _binlist_to_int(self, binlist):
         return int(''.join(str(b) for b in binlist), 2)
@@ -165,7 +191,7 @@ class Pico():
     def stream_write(self, freq):
         # Send frequency
         if freq < 2e3 or freq > 125e6:
-            self.error('stream_write - {:.0f} not supported (2k-125M)'.format(freq))
+            self.log.error('stream_write - {:.0f} not supported (2k-125M)'.format(freq))
         else:
             if self.stream_mode == self.stream_analog:
                 command = self.command_dac_stream
@@ -197,7 +223,7 @@ class Pico():
     ### CLK_EXT
     def clk_ext_set_frequency(self, freq):
         if freq < 1e3 or freq > 62.5e6: # system clock = 2k-125M (133M)
-            self.error('clk_ext_set_frequency - {:.0f} not supported (1k-62.5M)'.format(freq))
+            self.log.error('clk_ext_set_frequency - {:.0f} not supported (1k-62.5M)'.format(freq))
         else:
             command = self.command_clk_ext
             command += '{:f}'.format(freq)

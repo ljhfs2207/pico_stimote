@@ -19,6 +19,17 @@
 #define CORE1_MANCHESTER_IDLE_TRUE 1
 #define CORE1_UPDATE_VLEVEL 2
 
+// SCAN pins
+#define SCAN_PHI 16 
+#define SCAN_PHIB 17 
+#define SCAN_DIN 18 
+#define SCAN_LOAD_CHIP 19 
+#define SCAN_LOAD_CHAIN 20 
+#define SCAN_DOUT 21 
+#define SCAN_MAX_BIT_SIZE 100
+#define SCAN_DELAY_US 1
+#define SCAN_DELAY sleep_us(SCAN_DELAY_US)
+
 void measure_freqs(void){
     uint f_pll_sys = frequency_count_khz(CLOCKS_FC0_SRC_VALUE_PLL_SYS_CLKSRC_PRIMARY);
     uint f_pll_usb = frequency_count_khz(CLOCKS_FC0_SRC_VALUE_PLL_USB_CLKSRC_PRIMARY);
@@ -37,6 +48,66 @@ void measure_freqs(void){
     printf("clk_usb = %dkHz\n", f_clk_usb);
     printf("clk_adc = %dkHz\n", f_clk_adc);
     printf("clk_rtc = %dkHz\n", f_clk_rtc); 
+}
+
+void scan_init(void){
+    gpio_put(SCAN_PHI, 0);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHIB, 0);
+    SCAN_DELAY;
+    gpio_put(SCAN_DIN, 0);
+    SCAN_DELAY;
+    gpio_put(SCAN_LOAD_CHIP, 0);
+    SCAN_DELAY;
+    gpio_put(SCAN_LOAD_CHAIN, 0);
+    SCAN_DELAY;
+}
+void scan_load_chip(void){
+    gpio_put(SCAN_LOAD_CHIP, 1);
+    SCAN_DELAY;
+    gpio_put(SCAN_LOAD_CHIP, 0);
+    SCAN_DELAY;
+}
+void scan_load_chain(void){
+    gpio_put(SCAN_LOAD_CHAIN, 1);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHI, 1);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHI, 0);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHIB, 1);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHIB, 0);
+    SCAN_DELAY;
+    gpio_put(SCAN_LOAD_CHAIN, 0);
+    SCAN_DELAY;
+}
+char scan_read_bit(void){
+    int dout;
+    gpio_put(SCAN_PHI, 1);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHI, 0);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHIB, 1);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHIB, 0);
+    SCAN_DELAY;
+    dout  = gpio_get(SCAN_DOUT);
+    SCAN_DELAY;
+    if (dout == 0) return '0';
+    else return '1';
+}
+void scan_write_bit(int din){
+    gpio_put(SCAN_DIN, din);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHI, 1);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHI, 0);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHIB, 1);
+    SCAN_DELAY;
+    gpio_put(SCAN_PHIB, 0);
+    SCAN_DELAY;
 }
 
 void core1_entry() {
@@ -83,6 +154,12 @@ int main() {
     13 CLK_EXT_COPY
     14 CMP_EXT
     15 CMP_EXT_COPY
+    16 SCAN_PHI
+    17 SCAN_PHIB
+    18 SCAN_DIN
+    19 SCAN_LOAD_CHIP
+    20 SCAN_LOAD_CHAIN
+    21 SCAN_DOUT
     */
     int i;
     stdio_init_all();
@@ -136,6 +213,20 @@ int main() {
     gpio_init(gpio_pin_stream_en);
     gpio_set_dir(gpio_pin_stream_en, GPIO_OUT);
 
+    // GPIO setting for scan chain
+    gpio_init   (SCAN_PHI);
+    gpio_set_dir(SCAN_PHI, GPIO_OUT);
+    gpio_init   (SCAN_PHIB);
+    gpio_set_dir(SCAN_PHIB, GPIO_OUT);
+    gpio_init   (SCAN_DIN);
+    gpio_set_dir(SCAN_DIN, GPIO_OUT);
+    gpio_init   (SCAN_LOAD_CHIP);
+    gpio_set_dir(SCAN_LOAD_CHIP, GPIO_OUT);
+    gpio_init   (SCAN_LOAD_CHAIN);
+    gpio_set_dir(SCAN_LOAD_CHAIN, GPIO_OUT);
+    gpio_init   (SCAN_DOUT);
+    gpio_set_dir(SCAN_DOUT, GPIO_IN); // floating
+
     // Variables for appropriate command execution
     char command[30];
     char bitstream[131072]; // 128kB among rp2040=264kB 
@@ -145,6 +236,8 @@ int main() {
     uint dac_command;
     int byte_count;
     uint current_idle_state = CORE1_MANCHESTER_IDLE_FALSE;
+    int scan_num_bit;
+    char scan_bits [SCAN_MAX_BIT_SIZE];
 
     while (true) {
         if(uart_is_readable(uart0)){
@@ -255,7 +348,7 @@ int main() {
                 multicore_fifo_push_blocking(current_idle_state);
                 printf("%s\n", idle);
             }
-            else if(strcmp(command, "clk_ext") == 0){ // set clk_ext frequency
+            else if (strcmp(command, "clk_ext") == 0){ // set clk_ext frequency
                 scanf("%f", &freq);
                 // calculate divider value (float)
                 div = clock_get_hz(clk_sys) / (freq * 2); // state machine freq / 2  = clock freq
@@ -308,7 +401,29 @@ int main() {
                     }
                 }
             }
+            else if (strcmp(command, "scan_read") == 0){ // scan_chain read operation
+                scanf("%d", &scan_num_bit);
+                scan_load_chain();
+                for(i=0; i < scan_num_bit; i++) {
+                    scan_bits[i] = scan_read_bit();
+                    printf("%c", scan_bits[i]);
+                }
+                printf("\n");
+            }
+            else if (strcmp(command, "scan_write") == 0){ // scan_chain read operation
+                scanf("%d", &scan_num_bit);
+                for(i=0; i < scan_num_bit; i++) {
+                    scan_bits[i] = uart_getc(uart0);
+                    if (scan_bits[i] == '0') scan_write_bit(0);
+                    else scan_write_bit(1);
+                    printf("%c", scan_bits[i]);
+                }
+                scan_load_chip();
+                stdio_flush();
+                printf("\n");
+            }
         }
     }
     return 0;
 }
+

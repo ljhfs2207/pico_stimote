@@ -6,7 +6,7 @@ os.chdir('/home/ddlabpi/pico/dac_control/')
 sys.path.append('/home/ddlabpi/pico/dac_control/')
 
 ### import modules
-from pico import Pico
+from pico import pico
 
 #################### Main parameters
 ### Pico setting
@@ -22,7 +22,7 @@ log_annotation = 'pico_board_dac'
 
 #################### Core behavior
 ### Connect PICO
-pico = Pico(pico_port, baud, log_annotation)
+pico = pico(pico_port, baud, log_annotation)
 log = pico.log
 
 ### PICO - DAC init

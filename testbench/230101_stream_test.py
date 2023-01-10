@@ -1,7 +1,7 @@
 import sys
 sys.path.append('/home/ddlabpi/pico/stimote')
 
-from pico import Pico
+from pico import pico
 import RPi.GPIO as gpio
 import time
 
@@ -13,7 +13,7 @@ baud = 921600
 
 #gpio.setmode(gpio.BCM)
 #gpio.setup(4, gpio.OUT)
-pico = Pico(pico_port, baud, 'test')
+pico = pico(pico_port, baud, 'test')
 
 ### Frequency change test
 #pico.clk_ext_set_frequency(2e6)

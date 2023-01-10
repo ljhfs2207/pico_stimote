@@ -36,6 +36,11 @@ reboot:
 clean:
 	rm -rf build/*
 
+stimote_scan:
+	python3 pico_scan.py
+stimote_sweep:
+	python3 testbench/230103_stimote_stimq_sweep.py -q 7 -m 5
+
 gpio: FORCE
 	raspi-gpio set 4 ip pd
 
