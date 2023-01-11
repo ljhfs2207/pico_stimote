@@ -15,10 +15,11 @@ class pico_scan():
     csvname = 'scan.csv'
     command_scan_read = 'scan_read'
     command_scan_write = 'scan_write'
+    timeout = 5 #sec
 
     ### Generic methods
     def __init__(self, port, baud, comment='scan'):
-        self._serial = serial.Serial(port, baud)
+        self._serial = serial.Serial(port, baud, timeout=self.timeout)
         self.logger_init(comment)
     def logger_init (self, comment):
         import logging
@@ -54,13 +55,15 @@ class pico_scan():
             return self._serial.readline().rstrip().decode('utf-8')
         except UnicodeDecodeError:
             return self._serial.readline().rstrip()
-
     def write_raw(self, command):
         self._serial.write(command)
     def read_raw(self):
         while self._serial.inWaiting() == 0:
             pass
         return self._serial.read_all()
+    def flush(self):
+        self._serial.flushInput()
+        self._serial.flushOutput()
 
     ### DB handler
     def scan_load_db(self, csvname=csvname):
@@ -103,12 +106,13 @@ class pico_scan():
     ### Communication with chip
     def scan_read(self):
         '''Read db and change db'''
+        #self.flush()
         # Send command
         self.write_line(self.command_scan_read)
         self.write_line('{}'.format(self.num_scan))
         read_result = self.read_line()
         self.log.info('scan_read - write = {}'.format(self.num_scan))
-        self.log.info('scan_read - echoed = {}'.format(read_result))
+        self.log.info('scan_read - echoed = {} {}'.format(len(read_result), read_result))
         # Process data
         for item in self.db:
             width = int(item['Width'])
@@ -116,6 +120,7 @@ class pico_scan():
             read_result = read_result[width:]
     def scan_write(self):
         '''Write db to scan chain'''
+        #self.flush()
         # Prepare data
         write_str = ''
         for item in self.db:
@@ -127,7 +132,7 @@ class pico_scan():
         self.write_line(write_str)
         write_result = self.read_line()
         self.log.info('scan_write - write = {} {}'.format(self.num_scan, write_str))
-        self.log.info('scan_write - echoed = {}'.format(write_result))
+        self.log.info('scan_write - echoed = {} {}'.format(len(write_result), write_result))
 
     ### GUI
     def gui(self):
@@ -210,8 +215,10 @@ class pico_scan():
 
 
 if __name__=='__main__':
-    pico_port = '/dev/serial0'
+    #pico_port = '/dev/serial0'
     baud = 921600
+    pico_port = '/dev/ttyACM0'
+    #baud = 9600
     pico = pico_scan(pico_port, baud, 'test')
     pico.scan_load_db()
     #print(pico.db)
@@ -220,6 +227,7 @@ if __name__=='__main__':
 
     #pico.scan_read()
     #pico.scan_write()
+    #pico.scan_print_db()
 
     pico.gui()
 

@@ -20,8 +20,8 @@ mon_cap = options.mon_cap
 stimote_inst_dir = './stimote_inst'
 
 ### Pico setting
-pico_port = '/dev/serial0' # '/dev/ttyACM0'
-baud = 921600 # 115201
+pico_port =  '/dev/ttyACM0' # '/dev/serial0'
+baud = 9600 # 921600 # 115201
 pico = pico(pico_port, baud, 'stimq_sweep')
 log = pico.log
 

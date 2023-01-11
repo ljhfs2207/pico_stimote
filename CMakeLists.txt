@@ -27,8 +27,8 @@ if (TARGET tinyusb_device)
     target_link_libraries(stimote_control pico_stdlib pico_multicore hardware_pio)
 
     # enable usb output, disable uart output
-    pico_enable_stdio_usb(stimote_control 0)
-    pico_enable_stdio_uart(stimote_control 1)
+    pico_enable_stdio_usb(stimote_control 1)
+    pico_enable_stdio_uart(stimote_control 0)
 
     # make dac_control.pio.h
     pico_generate_pio_header(stimote_control ${CMAKE_CURRENT_LIST_DIR}/dac121s101.pio)

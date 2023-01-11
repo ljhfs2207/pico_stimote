@@ -1,7 +1,9 @@
 
 stimote_inst/
 
-build/
+
+build/*
+!build/stimote_control.uf2
 logs/
 __pycache__/
 *.swp

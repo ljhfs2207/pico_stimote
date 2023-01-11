@@ -21,8 +21,8 @@ class pico():
     vhigh = 5
     
     command_freq = 'freq\n'
-    command_vlevel = 'vlowhigh\n'
-    command_dac_sequence = 'dac_command\n'
+    command_vlevel = 'vlowhigh'
+    command_dac_sequence = 'dac_command'
     command_dac_stream = 'dac_stream\n'
     command_stream_idle = 'dac_idle_onoff\n'
     command_clk_ext = 'clk_ext\n'
@@ -63,15 +63,19 @@ class pico():
 
     ### Serial communication helper
     def write_line(self, command):
-        self._serial.write(bytes((command+'\n').encode('utf-8')))
+        if type(command) == bytes:
+            self._serial.write(command + b'\n')
+        elif type(command) == str:
+            self._serial.write(bytes((command+'\n').encode('utf-8')))
 
     def read_line(self):
         while self._serial.inWaiting() == 0:
             pass
-        try:
-            return self._serial.readline().rstrip().decode('utf-8')
-        except UnicodeDecodeError:
-            return self._serial.readline().rstrip()
+        return self._serial.readline().rstrip()
+        #try:
+        #    return self._serial.readline().rstrip().decode('utf-8')
+        #except UnicodeDecodeError:
+        #    return self._serial.readline().rstrip()
 
     def write_raw(self, command):
         self._serial.write(command)
@@ -79,6 +83,8 @@ class pico():
         while self._serial.inWaiting() == 0:
             pass
         return self._serial.read_all()
+    def write_newline(self):
+        self.write_raw(bytes('\n'.encode('ascii')))
 
     ### DAC control
     def dac_set_vref(self, vrefl, vrefh):
@@ -94,25 +100,14 @@ class pico():
             self.log.error('Error: vhigh > vrefh')
         else:
             self.vhigh = vhigh
-        command = self.command_vlevel.encode('ascii')
-        command += self._dac_seq_v_to_bytes(self.vlow)
-        command += self._dac_seq_v_to_bytes(self.vhigh)
-        self.log.info('dac_set_vlevel - write = {}'.format(command.decode().replace('\n',' ')))
-        self.write_raw(command)
-        self.log.info('dac_set_vlevel - echoed = {}'.format(self.read_line()))
-
-    def dac_set_voltage(self, v):
-        if v < self.vrefl:
-            self.log.error('Error: v < vrefl')
-        elif v > self.vrefh:
-            self.log.error('Error: v > vrefh')
+        code_low = self._dac_v_to_code(vlow)
+        code_high = self._dac_v_to_code(vhigh)
         # serial communication
-        command = self.command_dac_sequence.encode('ascii')
-        command += self._dac_seq_v_to_bytes(v)
-        #self.log.info('dac_set_voltage - write = {}'.format(command.replace('\n',' ')))
-        self.log.info('dac_set_voltage - write = {} {:.2f} V'.format(self.command_dac_sequence.rstrip(), v))
-        self.write_raw(command)
-        self.log.info('dac_set_voltage - echoed = {}'.format(self.read_line()))
+        self.log.info('dac_set_vlevel - write = {} {} {}'.format(self.command_vlevel, code_low, code_high))
+        self.write_line(self.command_vlevel)
+        self.write_line(self._dac_code_to_str(code_low))
+        self.write_line(self._dac_code_to_str(code_high))
+        self.log.info('dac_set_vlevel - echoed = {}'.format(self.read_line()))
 
     def dac_set_code(self, code):
         if code < 0:
@@ -120,13 +115,22 @@ class pico():
         elif code > 4095:
             self.log.error('Error: v > max_code 4095')
         # serial communication
-        command = self.command_dac_sequence.encode('ascii')
-        command += self._dac_seq_code_to_bytes(code)
-        #self.log.info('dac_set_voltage - write = {}'.format(command.replace('\n',' ')))
-        self.log.info('dac_set_code - write = {} {}'.format(self.command_dac_sequence.rstrip(), code))
-        self.write_raw(command)
+        self.log.info('dac_set_code - write = {} {}'.format(self.command_dac_sequence, code))
+        self.write_line(self.command_dac_sequence)
+        self.write_line(self._dac_code_to_str(code))
         self.log.info('dac_set_code - echoed = {}'.format(self.read_line()))
 
+    def dac_set_voltage(self, v):
+        if v < self.vrefl:
+            self.log.error('Error: v < vrefl')
+        elif v > self.vrefh:
+            self.log.error('Error: v > vrefh')
+        code = self._dac_v_to_code(v)
+        # serial communication
+        self.log.info('dac_set_voltage - write = {} {}'.format(self.command_dac_sequence, code))
+        self.write_line(self.command_dac_sequence)
+        self.write_line(self._dac_code_to_str(code))
+        self.log.info('dac_set_voltage - echoed = {}'.format(self.read_line()))
 
     def dac_set_frequency(self, freq):
         if freq < 2e3 or freq > 125e6:
@@ -138,36 +142,10 @@ class pico():
             self.write_line(command)
             self.log.info('dac_set_frequency - echoed = {}'.format(self.read_line()))
 
-    def _dac_seq_v_to_bytes(self, v):
-        binlist = self._dac_seq_v_to_binlist(v)
-        charlist = []
-        charlist.append(self._binlist_to_int(binlist[0:0+8]))
-        charlist.append(self._binlist_to_int(binlist[8:8+8]))
-        return bytes(charlist)
-    def _dac_seq_v_to_binlist(self, v):
-        seq = self.dac_prefix.copy()
-        seq.extend(self._v_to_u12b_list(v))
-        return seq
-    def _dac_seq_code_to_bytes(self, code):
-        binlist = self._dac_seq_code_to_binlist(code)
-        charlist = []
-        charlist.append(self._binlist_to_int(binlist[0:0+8]))
-        charlist.append(self._binlist_to_int(binlist[8:8+8]))
-        return bytes(charlist)
-    def _dac_seq_code_to_binlist(self, code):
-        seq = self.dac_prefix.copy()
-        seq.extend(self._code_to_u12b_list(code))
-        return seq
-
-    def _v_to_u12b_list(self, v):
-        code = round((v-self.vrefl)/(self.vrefh-self.vrefl)*4095)
-        return [int(char) for char in '{:012b}'.format(code)]
-    def _code_to_u12b_list(self, code):
-        return [int(char) for char in '{:012b}'.format(code)]
-    def _binlist_to_int(self, binlist):
-        return int(''.join(str(b) for b in binlist), 2)
-    def _binlist_to_int_str(self, binlist):
-        return '{:d}'.format(self._binlist_to_int(binlist))
+    def _dac_v_to_code(self, v):
+        return round((v-self.vrefl)/(self.vrefh-self.vrefl)*4095)
+    def _dac_code_to_str(self, code):
+        return '{}'.format(code)
     ### Stream control
     def stream_str_to_byte(self, string):
         stream_chunks = [string[pos:pos+8] for pos in range(0, len(string), 8)]
@@ -233,4 +211,50 @@ class pico():
 
 
 
+if __name__ == '__main__':
+    #pico_port = '/dev/ttyACM0' # '/dev/serial0'
+    pico_port = 'COM8'
+    #baud = 115201
+    #baud = 921600
+    baud = 9600
+
+    pico = pico(pico_port, baud, 'all_test')
+
+    # CLK_EXT
+    pico.clk_ext_set_frequency(100e3)
+    input('Next')
+    pico.clk_ext_set_frequency(10e3)
+    input('Next')
+
+    pico.dac_set_vref(vrefl=0, vrefh=5)
+    pico.dac_set_vlevel(vlow=1, vhigh=4)
+    pico.dac_set_code(2048)
+    input('Next')
+    pico.dac_set_voltage(1)
+    input('Next')
+    #pico.dac_set_frequency(10e3) # useless
+    #input('Next')
+
+    pico.stream_str_to_byte('01'*100)
+    #pico.stream_read_from_file
+
+    pico.stream_set_mode('analog')
+    pico.stream_write(2e3)
+    input('Next')
+
+    pico.stream_set_mode('digital')
+    pico.stream_write(150e3)
+    input('Next')
+
+    pico.stream_idle(True)
+    pico.stream_set_mode('digital')
+    pico.stream_write(150e3)
+    pico.stream_idle(False)
+    input('Next')
+
+    pico.stream_idle(True)
+    pico.stream_set_mode('analog')
+    pico.stream_write(20e3)
+    pico.stream_idle(False)
+    input('Next')
 

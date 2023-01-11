@@ -2,14 +2,15 @@ import sys
 sys.path.append('/home/ddlabpi/pico/stimote')
 
 from pico import pico
-import RPi.GPIO as gpio
+#import RPi.GPIO as gpio
 import time
 
 ### Pico setting
 #pico_port = '/dev/ttyACM0'
-pico_port = '/dev/serial0'
+pico_port = '/dev/ttyACM0' # '/dev/serial0'
 #baud = 115201
-baud = 921600
+#baud = 921600
+baud = 9600
 
 #gpio.setmode(gpio.BCM)
 #gpio.setup(4, gpio.OUT)
@@ -19,17 +20,17 @@ pico = pico(pico_port, baud, 'test')
 #pico.clk_ext_set_frequency(2e6)
 #pico.clk_ext_set_frequency(1e6)
 #pico.clk_ext_set_frequency(0.5e6)
-pico.clk_ext_set_frequency(1e3)
-input('next')
-pico.clk_ext_set_frequency(10e3)
-input('next')
 pico.clk_ext_set_frequency(100e3)
-input('next')
-pico.clk_ext_set_frequency(1e6)
-input('next')
-pico.clk_ext_set_frequency(10e6)
-input('next')
-pico.clk_ext_set_frequency(150e3)
+#input('next')
+#pico.clk_ext_set_frequency(10e3)
+#input('next')
+#pico.clk_ext_set_frequency(100e3)
+#input('next')
+#pico.clk_ext_set_frequency(1e6)
+#input('next')
+#pico.clk_ext_set_frequency(10e6)
+#input('next')
+#pico.clk_ext_set_frequency(150e3)
 
 
 #### Test examples

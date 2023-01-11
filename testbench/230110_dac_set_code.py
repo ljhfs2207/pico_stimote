@@ -18,10 +18,10 @@ code = options.code
 
 #################### Main parameters
 ### Pico setting
-#pico_port = '/dev/ttyACM0'
-pico_port = '/dev/serial0'
+pico_port = '/dev/ttyACM0'
+#pico_port = '/dev/serial0'
 #baud = 115201
-baud = 921600
+baud = 9600 # 921600
 pico_sm_freq = 100e3
 
 ### DAC setting 
@@ -34,5 +34,7 @@ pico = pico(pico_port, baud, log_annotation)
 pico.logger_off()
 log = pico.log
 pico.dac_set_code(code)
+#pico._serial.write(b'\x10\x10\n')
+#print(pico._serial.read_all())
 ####################
 

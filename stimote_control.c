@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "pico/stdlib.h" // stdio, time, gpio, uart
 #include "pico/multicore.h"
@@ -14,6 +15,7 @@
 
 //const uint pin_test = 3;
 //PICO_DEFAULT_LED_PIN
+#define STDIN_TIMEOUT_US 0
 
 #define CORE1_MANCHESTER_IDLE_FALSE 0
 #define CORE1_MANCHESTER_IDLE_TRUE 1
@@ -48,6 +50,32 @@ void measure_freqs(void){
     printf("clk_usb = %dkHz\n", f_clk_usb);
     printf("clk_adc = %dkHz\n", f_clk_adc);
     printf("clk_rtc = %dkHz\n", f_clk_rtc); 
+}
+
+void putLong(long x) {
+    if(x < 0) {
+        putchar('-');
+        x = -x;
+    }
+    if (x >= 10) {
+        putLong(x / 10);
+    }
+    putchar(x % 10+'0');
+}
+void putFloat(float x, int p) {
+    long d;
+    if (x<0) {
+        putchar('-');
+        x=-x;
+    }
+    d = x;
+    putLong(d);
+    putchar('.');
+    while (p--) {
+        x = (x - d) * 10;
+        d = x;
+        putchar('0'+d);
+    }
 }
 
 void scan_init(void){
@@ -187,9 +215,9 @@ int main() {
     multicore_fifo_push_blocking(sm); // communication core 0 - 1 using state machine ID
 
     // UART setting - GP0=TX, GP1=RX by default
-    int baud = 921600;
-    int baud_result;
-    baud_result = uart_init(uart0, baud); 
+    //int baud = 921600;
+    //int baud_result;
+    //baud_result = uart_init(uart0, baud); 
 
     /* GPIO setting for interupting stream */
     // output pins for DAC control
@@ -240,7 +268,7 @@ int main() {
     char scan_bits [SCAN_MAX_BIT_SIZE];
 
     while (true) {
-        if(uart_is_readable(uart0)){
+        //if(uart_is_readable(uart0)){
             scanf("%s", command);
             if(strcmp(command, "freq") == 0){ // set state machine frequency, almost useless now
                 scanf("%f", &freq);
@@ -261,34 +289,25 @@ int main() {
             }
             else if (strcmp(command, "vlowhigh") == 0){ // set dac seqeuence for low / high levels
                 // receive word_0
-                dac_command = 0;
-                command[0] = uart_getc(uart0);
-                dac_command += (uint)command[0] << 24u;
-                command[0] = uart_getc(uart0);
-                dac_command += (uint)command[0] << 16u;
+                scanf("%d", &dac_command);
+                dac_command = dac_command << 16u;
                 word_0 = dac_command;
                 // receive word_1
-                dac_command = 0;
-                command[0] = uart_getc(uart0);
-                dac_command += (uint)command[0] << 24u;
-                command[0] = uart_getc(uart0);
-                dac_command += (uint)command[0] << 16u;
+                scanf("%d", &dac_command);
+                dac_command = dac_command << 16u;
                 word_1 = dac_command;
                 // share with core 1
                 multicore_fifo_push_blocking(CORE1_UPDATE_VLEVEL);
                 multicore_fifo_push_blocking(word_0);
                 multicore_fifo_push_blocking(word_1);
                 // echo
-                printf("%x %x\n", word_0 >> 16u, word_1 >> 16u);
+                printf("%d %d\n", word_0 >> 16u, word_1 >> 16u);
             }
             else if (strcmp(command, "dac_command") == 0){ // single dac command
-                dac_command = 0;
-                command[0] = uart_getc(uart0);
-                dac_command += (uint)command[0] << 24u;
-                command[0] = uart_getc(uart0);
-                dac_command += (uint)command[0] << 16u;
+                scanf("%d", &dac_command);
+                dac_command = dac_command << 16u;
                 pio_sm_put_blocking(pio, sm, dac_command);
-                printf("x'%04x'\n", dac_command >> 16u);
+                printf("%d\n", dac_command >> 16u);
             }
             else if (strcmp(command, "dac_stream") == 0){ // stream data
                 // Set CMP_EXT frequency
@@ -406,23 +425,22 @@ int main() {
                 scan_load_chain();
                 for(i=0; i < scan_num_bit; i++) {
                     scan_bits[i] = scan_read_bit();
-                    printf("%c", scan_bits[i]);
+                    putchar(scan_bits[i]);
                 }
-                printf("\n");
+                putchar('\n');
             }
             else if (strcmp(command, "scan_write") == 0){ // scan_chain read operation
                 scanf("%d", &scan_num_bit);
                 for(i=0; i < scan_num_bit; i++) {
-                    scan_bits[i] = uart_getc(uart0);
+                    scan_bits[i] = getchar();
                     if (scan_bits[i] == '0') scan_write_bit(0);
-                    else scan_write_bit(1);
-                    printf("%c", scan_bits[i]);
+                    else                     scan_write_bit(1);
+                    putchar(scan_bits[i]);
                 }
                 scan_load_chip();
-                stdio_flush();
-                printf("\n");
+                putchar('\n');
             }
-        }
+        //}
     }
     return 0;
 }
