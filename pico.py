@@ -6,6 +6,7 @@
 #   221201: Changed for DAC121S101 // 16bit command
 #   230101: changed command from character to string
 #   230101: added clk_ext/cmp_ext
+#   230111: Modified for USB version
 
 import os
 import sys
