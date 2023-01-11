@@ -83,7 +83,8 @@ void scan_load_chain(void){
     SCAN_DELAY;
 }
 char scan_read_bit(void){
-    int dout;
+    int dout = gpio_get(SCAN_DOUT);
+    SCAN_DELAY;
     gpio_put(SCAN_PHI, 1);
     SCAN_DELAY;
     gpio_put(SCAN_PHI, 0);
@@ -91,8 +92,6 @@ char scan_read_bit(void){
     gpio_put(SCAN_PHIB, 1);
     SCAN_DELAY;
     gpio_put(SCAN_PHIB, 0);
-    SCAN_DELAY;
-    dout  = gpio_get(SCAN_DOUT);
     SCAN_DELAY;
     if (dout == 0) return '0';
     else return '1';
@@ -177,6 +176,7 @@ int main() {
     uint offset_clk_ext = pio_add_program(pio, &clk_ext_program);
     uint sm_clk_ext = pio_claim_unused_sm(pio, true);
     clk_ext_program_init(pio, sm_clk_ext, offset_clk_ext);
+    pio_sm_set_clkdiv(pio, sm_clk_ext, clock_get_hz(clk_sys) / (150e3 * 2)); // default clock=150kHz
     // state machien for cmp_ext
     uint offset_cmp_ext = pio_add_program(pio, &cmp_ext_program);
     uint sm_cmp_ext = pio_claim_unused_sm(pio, true);
